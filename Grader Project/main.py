@@ -5,13 +5,15 @@
 # Import packages ----------------------------------------------------------------------------------- #
 from docx import Document # install python-docx
 import re
-# import pyapa
+# import neuspell
+# from neuspell import available_checkers, BertChecker
 
 # INPUT variables------------------------------------------------------------------------------------ #
 
 doc = Document("C:/Users/donal/OneDrive - York University/New/Al/E-Grader/test_concordance.docx") #Document to be graded
 end_of_paragraph = r"\.\s*$" #Regex pattern to find the end of a paragraph (a hard return)
 required_wordcount = 1000
+required_references = 5
 
 # Functions------------------------------------------------------------------------------------------ #
 
@@ -56,7 +58,7 @@ def wordcount(text): #  Returns the number of words in a string
 
 def check_intext_citations(body):
     # pattern = r"\(([^)]*), (\d{4})(?:, p\. (\d{1,4}))?\)" # e.g. (Ipperciel, 2018, p. 12). THIS IS TOO PRECISE. WON'T PICK UP ON MISTAKES
-    pattern = r"\([^)]*\d{4}[a-zA-Z]?[^)]*\)"
+    pattern = r"\([^)]*[1,2]\d{3}[a-zA-Z]?[^)]*\)"
     citation_list = re.findall(pattern, body) # finds all in-text citations in the body
     # print("citation_list: ", citation_list)
 
@@ -65,11 +67,11 @@ def check_intext_citations(body):
     i = 0
     # all rules for in-text citations in if clauses
     for citation in citation_list:
-        if not re.search(", \d{4}", citation):  #  check if there's a comma and space before the year
+        if not re.search(", [1,2]\d{3}", citation):  #  check if there's a comma and space before the year
             error_APA.append("Missing comma before year in reference " + str(i + 1) + ": " + citation_list[i])
-        if re.search("\d{4}, ?\d{1,4}", citation):  # check if there's a space and comma after the year, and only a number instead of p.
+        if re.search("[1,2]\d{3}[a-z]?, \d{1,4}", citation) or re.search("[1,2]\d{3}[a-z]?,\d{1,4}", citation):  # check if there's a comma after the year, and only a number instead of p.
             error_APA.append("Missing 'p. ' before page number in reference " + str(i + 1) + ": " + citation_list[i])
-        if not re.search("\d{4}[a-zA-Z]?[,)]", citation): # check if there's a missing comma after the year
+        if not re.search("[1,2]\d{3}[a-z]?[,)]", citation): # check if there's a missing comma after the year
             error_APA.append("Missing comma after the year in reference " + str(i + 1) + ": " + citation_list[i])
         if "et al" in citation_list[i]:  # Check "et al" mistakes
             if "et al." not in citation_list[i]:
@@ -85,24 +87,77 @@ def check_intext_citations(body):
 
         i = i + 1
 
-    # Do citations match with the references? !!!!!!!
+    # Check for page number !!!
 
     return error_APA, citation_list
 
-def check_references(references):
+def check_references(references, required_references):
     error_references = []
 
-    # Find number of references
+    # Determine if the number of references meets the requirement
     reference_list = references.splitlines()  # Get the individual references in a list
     reference_list = [item for item in reference_list if item]
     num_references = len(reference_list)
+    if num_references < required_references:
+        error_references.append("There are only " + str(num_references) + " references when the requirement is for " + str(required_references) + ".")
 
-    index1 = reference_list[0].index(").")  # testing
+    # Check if the references are in alphabetical order
+    if reference_list != sorted(reference_list):
+        error_references.append("References in the bibliography are not in alphabetical order.")
 
-    ref_author_year_part = reference_list[0][:index1 + 2]
-    # print(ref_author_year_part)
+    # Check if the references has a doi
+    for i in range(len(reference_list)):
+        if "https://doi" in reference_list[i]:
+            error_references.append("Reference " + str(i + 1) + " has a doi number. While this is optional in APA, it should not be included in papers in this class.")
 
-    # find if thers's leading space in ref_author_year_part. If not: Message error: Missing space between year and title. !!!
+    # Check for missing period ad the end of the reference
+    for i in range(len(reference_list)):
+        if not reference_list[i].endswith("."):
+            error_references.append("Missing period at the end of reference " + str(i + 1) + ".")
+
+    # Check inside the references-----------------------------------------------------------------#
+
+    # Get the individual references in a list
+    reference_list = references.splitlines()
+    reference_list = [item for item in reference_list if item]
+
+    # Grab the names and authors from each reference
+    ref_author_year_part = []
+    for i in range(len(reference_list)):
+        try:
+            index1 = reference_list[i].index(")")
+            if not re.search("\([1,2]\d{3}[a-z]?\)", reference_list[i][:index1 + 1]):  # in case the reference is not in APA format, a bracket may appear further downthe reference...
+                temp_ref = reference_list[i].split()[0] + " (" + re.search("[1,2]\d{3}", reference_list[i]).group() + ")"  # grabs the first author's name and a year anywhere in the reference
+                ref_author_year_part.append(temp_ref)
+            else:
+                ref_author_year_part.append(reference_list[i][:index1 + 1])
+        except:  # in case the references are not in APA format
+            error_references.append("In APA, references always start with the author's name, first letter of the first name and the year in brackets. See Reference " + str(i + 1) + ".")
+            temp_ref = reference_list[i].split()[0] + " " + re.search("[1,2]\d{3}", reference_list[i]).group()  # grabs the first author's name and a year anywhere in the reference
+            ref_author_year_part.append(temp_ref)
+
+    # Have to include the possibility that there is no author !!!!!!!!! n.a.?
+
+    print("ref_author_year_part: ", ref_author_year_part)
+
+    # Check if the year is followed by a period
+    for i in range(len(ref_author_year_part)):
+        if not re.search("\([1,2]\d{3}[a-z]?\)\.", reference_list[i]) and re.search("\([1,2]\d{3}[a-z]?\)", reference_list[i]):
+            error_references.append("Missing period after the year in reference " + str(i + 1) + ".")
+
+    # Verify the author-year part
+    for i in range(len(ref_author_year_part)):
+        if " and " in ref_author_year_part[i]:  # Check if "and" instead of & is in the citation
+            error_references.append("Ampersand (&) should be used instead of 'and' in reference " + str(i + 1) + ": " + ref_author_year_part[i])
+        temp_item = ref_author_year_part[i].split()
+        if len(temp_item) == 3:  # if the reference only has one author, e.g. Ipperciel, D. (2010) -- 3 parts
+            if "," in ref_author_year_part[i] and not re.search("[A-Z]\.", temp_item[1]):
+                error_references.append("In Reference " + str(i + 1) + ", the first name should appear after the author's name as a single capital letter followed by a period.")
+        elif len(temp_item) == 6:  # if the reference has two authors, e.g. Ipperciel, D. & Elatia, S. (2010) -- 6 parts
+            pass
+        elif len(temp_item) > 6: # if the reference has more than two authors, e.g. Ipperciel, D., Elatia, S. & Johnson, M. (2010)
+            pass
+
 
     # Author check
     references = references.lstrip()  # Remove  whitespace from the references section
@@ -124,10 +179,8 @@ def check_references(references):
         pass
         # print("Author format is incorrect")
 
-    # Check for missing period ad the end of the reference
-    # Check for alphabetical order in references
-
-    return error_references, num_references
+# If there's an http (not doi), it should be only for web sites. Need to be able to identify a web page... so as to exclude http from other references !!!
+    return error_references
 
 
 def concordance_btw_citations_and_references(references, citation_list): # Checks if the citations in the body match the references and visa versa
@@ -140,28 +193,36 @@ def concordance_btw_citations_and_references(references, citation_list): # Check
 
     # Grab the names and authors from each reference
     ref_author_year_part = []
-    i = 0
     for i in range(len(reference_list)):
-        index1 = reference_list[i].index(").")
-        ref_author_year_part.append(reference_list[i][:index1 + 1])
-        i = i + 1
+        try:
+            index1 = reference_list[i].index(")")
+            if not re.search("\([1,2]\d{3}[a-z]?\)", reference_list[i][:index1 + 1]):  # in case the reference is not in APA format, a bracket may appear further downthe reference...
+                temp_ref = reference_list[i].split()[0] + " (" + re.search("[1,2]\d{3}", reference_list[i]).group() + ")"  # grabs the first author's name and a year anywhere in the reference
+                ref_author_year_part.append(temp_ref)
+            else:
+                ref_author_year_part.append(reference_list[i][:index1 + 1])
+        except:  # in case the references are not in APA format
+            error_references.append("In APA, references always start with the author's name, first letter of the first name and the year in brackets. See Reference " + str(i + 1) + ".")
+            temp_ref = reference_list[i].split()[0] + " " + re.search("[1,2]\d{3}", reference_list[i]).group()  # grabs the first author's name and a year anywhere in the reference
+            ref_author_year_part.append(temp_ref)
 
     # The ref_author_year_part list must be cleaned up to look like a proper in-text citation
     cleaned_ref_author_year = []
     for i in range(len(ref_author_year_part)):
         temp_item = ref_author_year_part[i].split()
-        if len(temp_item) == 3:  # if the reference only has one author, e.g. Ipperciel, D. (2010) -- 3 parts
+        if len(temp_item) == 2:  # Ipperciel (2010) -- 2 parts
+            cleaned_ref_author_year.append(temp_item[0] + " " + temp_item[1][1:-1])
+        elif len(temp_item) == 3:  # if the reference only has one author, e.g. Ipperciel, D. (2010) -- 3 parts
             cleaned_ref_author_year.append(temp_item[0] + " " + temp_item[2][1:-1])
         elif len(temp_item) == 6:  # if the reference has two authors, e.g. Ipperciel, D. & Elatia, S. (2010) -- 6 parts
             cleaned_ref_author_year.append(temp_item[0][:-1] + " " + temp_item[2] + " " + temp_item[3] + " " + temp_item[5][1:-1])
         elif len(temp_item) > 6: # if the reference has more than two authors, e.g. Ipperciel, D., Elatia, S. & Johnson, M. (2010)
             cleaned_ref_author_year.append(temp_item[0][:-1] + " et al., " + temp_item[-1][1:-1])
-        i = i + 1
 
     # Compare the citation_list with cleaned references
     for i in range(len(citation_list)):
         for j in range(len(cleaned_ref_author_year)):
-            citation_year = re.search("\d{4}", citation_list[i]).group()
+            citation_year = re.search("[1,2]\d{3}", citation_list[i]).group()
             if (citation_list[i].split(",")[0].strip()[1:] not in cleaned_ref_author_year[j] # first condition: first word in citation_list is in reference
                     or citation_year not in cleaned_ref_author_year[j]):  # second condition: the year in citation is in reference
                 in_the_references = 0
@@ -175,7 +236,10 @@ def concordance_btw_citations_and_references(references, citation_list): # Check
     for i in range(len(cleaned_ref_author_year)):
         in_the_citations = 0
         for j in range(len(citation_list)):
-            ref_year = re.search("\d{4}", cleaned_ref_author_year[i]).group()
+            try:
+                ref_year = re.search("[1,2]\d{3}", cleaned_ref_author_year[i]).group()
+            except:
+                ref_year = ""
             if cleaned_ref_author_year[i].split(",")[0].strip() in citation_list[j] and ref_year in citation_list[j]:
                 in_the_citations = 1
                 break
@@ -192,7 +256,7 @@ def generate_final_report(required_wordcount, num_words_text_minus_title, error_
    if num_words_text_minus_title > (required_wordcount * 1.1):
        final_report = final_report + "Your text has more words than the required word count (i.e. " + str(required_wordcount) + " words plus 10% or " + str(int(required_wordcount * 1.1)) + " words).\n"
    if error_APA:
-       final_report = final_report + "APA citation error(s): \n"
+       final_report = final_report + "APA in-text citation error(s): \n"
        for i in range(len(error_APA)):
            final_report = final_report + error_APA[i] + "\n"
 
@@ -226,11 +290,11 @@ error_APA, citation_list = check_intext_citations(body)
 error_concordance = concordance_btw_citations_and_references(references, citation_list)
 
 # Error report for references ------------------------------------------------------------------------ #
-error_references = []
+error_references = ""
 if references != "null": # Do this only if there is a references section
-    error_references, num_references = check_references(references)
+    error_references = check_references(references, required_references)
 else:
-    error_references.append("There is no references section")
+    error_references = error_references + "There is no references section"
 # print("Error report for references: ", error_references)
 # print("Number of references: ", num_references)
 
