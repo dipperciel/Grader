@@ -99,6 +99,90 @@ def check_intext_citations(body):
     return error_APA, citation_list
 
 
+def check_author_year(reference_list, ref_author_year_part, index1, i, error_references):
+
+    # Possible errors
+    if reference_list[i][index1 + 1] != ".":
+        error_references.append(
+            "Missing period after the bracketed year in Reference " + str(i + 1) + ": " + reference_list[i][
+                                                                                          :index1 + 1])
+    if " and " in ref_author_year_part[i]:  # Check if "and" instead of & is in the citation
+        error_references.append(
+            "Ampersand (&) should be used instead of 'and' in reference " + str(i + 1) + ": " +
+            ref_author_year_part[i])
+
+    # Preparing the author section for analysis below
+    temp_item = ref_author_year_part[i].replace("&", ",").replace("and", ",").split(",")
+    temp_item[-1] = temp_item[-1][:-6]
+    temp_item = [x for x in temp_item if
+                 x != "" and x != " "]  # Removes the items with the values "" and " " from the list
+
+    # Analysis based on the number of author parts (items separated by a comma)
+    if len(temp_item) == 1:  # if there's no comma in the single-author reference
+        error_references.append(
+            "Missing comma between author name and first name in Reference " + str(i + 1) + ": " +
+            ref_author_year_part[i])
+        if temp_item[0][-1] != " ":
+            error_references.append(
+                "Missing space between author and bracketed year in Reference " + str(i + 1) + ": " +
+                ref_author_year_part[i])
+        if temp_item[0].rstrip()[-1] != ".":
+            error_references.append(
+                "In Reference " + str(
+                    i + 1) + ", the first name should appear after the author's name as a single capital letter followed by a period.")
+
+    if len(temp_item) == 2:  # single author reference
+        if not temp_item[1].endswith(" "):
+            error_references.append(
+                "Missing space between author and bracketed year in Reference " + str(i + 1) + ": " +
+                ref_author_year_part[i])
+        if not temp_item[1].startswith(" "):
+            error_references.append(
+                "Missing space between author name and first name in Reference " + str(i + 1) + ": " +
+                ref_author_year_part[i])
+        if not temp_item[1].rstrip().endswith("."):
+            error_references.append(
+                "In Reference " + str(
+                    i + 1) + ", the first name should be a single capital letter followed by a period.")
+
+    if len(temp_item) == 3:
+        error_references.append(
+            "Missing comma in author name in Reference " + str(i + 1) + ": " +
+            ref_author_year_part[i])
+
+    # If temp_item has on odd number of element, it means there's a comma missing. It has to be added in the right place
+    if len(temp_item) % 2 != 0 and len(temp_item) > 3:
+        error_references.append(
+            "Missing comma in author name in Reference " + str(i + 1) + ": " + ref_author_year_part[i])
+        for item in temp_item:
+            if len(item.split()) == 2 and not item.split()[0][-1] == ".":
+                last_name, first_name = item.split()
+                first_name = " " + first_name
+                temp_item = [last_name] + [first_name] + temp_item[1:]
+
+    if len(temp_item) >= 4:  # Two or more authorsThree-author reference
+        if "&" not in ref_author_year_part[i]:
+            error_references.append(
+                "In Reference " + str(i + 1)+ ", the last author should be separated from the rest by a comma and an ampersand (&).")
+        counter = 0
+        for item in temp_item[
+                    1:]:  # the loop starts on the second items, as the first (ie author) will never start with a space
+            counter += 1
+            if not item.startswith(" "):
+                error_references.append("Missing space in Reference " + str(i + 1) + ", at or after author " + str(
+                    int((counter + 1) / 2)) + ": " + ref_author_year_part[i])
+        if temp_item[len(temp_item) - 3].endswith(" "):
+            error_references.append(
+                "Missing comma before the ampersand or 'and' in Reference " + str(i + 1) + ": " + ref_author_year_part[
+                    i])
+        for j in range(1, len(temp_item), 2):
+            if not re.search("[A-Z]\.", temp_item[j]):
+                error_references.append("In Reference " + str(i + 1) + ", author " + str(
+                    int((j + 1) / 2)) + ", the first name should be a single capital letter followed by a period.")
+
+    return error_references
+
+
 def check_references(references, required_references):
     error_references = []
 
@@ -138,92 +222,31 @@ def check_references(references, required_references):
                 index1 = reference_list[i].index(")")
                 ref_author_year_part.append(reference_list[i][:index1 + 1])
 
-                # Possible errors
-                if reference_list[i][index1 + 1] != ".":
-                    error_references.append("Missing period after the bracketed year in Reference " + str(i + 1) + ": " + reference_list[i][:index1 + 1])
-                if " and " in ref_author_year_part[i]:  # Check if "and" instead of & is in the citation
-                    error_references.append(
-                        "Ampersand (&) should be used instead of 'and' in reference " + str(i + 1) + ": " +
-                        ref_author_year_part[i])
+                check_author_year(reference_list, ref_author_year_part, index1, i, error_references)
 
-                # Preparing the author section for analysis below
-                temp_item = ref_author_year_part[i].replace("&", ",").replace("and", ",").split(",")
-                temp_item[-1] = temp_item[-1][:-6]
-                temp_item = [x for x in temp_item if x != "" and x != " "]  # Removes the items with the values "" and " " from the list
-
-                # Analysis based on the number of author parts (items separated by a comma)
-                if len(temp_item) == 1: # if there's no comma in the single-author reference
-                    error_references.append(
-                        "Missing comma between author name and first name in Reference " + str(i + 1) + ": " +
-                        ref_author_year_part[i])
-                    if temp_item[0][-1] != " ":
-                        error_references.append("Missing space between author and bracketed year in Reference " + str(i + 1) + ": " + ref_author_year_part[i])
-                    if temp_item[0].rstrip()[-1] != ".":
-                        error_references.append(
-                            "In Reference " + str(
-                            i + 1) + ", the first name should appear after the author's name as a single capital letter followed by a period.")
-
-                if len(temp_item) == 2: # single author reference
-                    if not temp_item[1].endswith(" "):
-                        error_references.append("Missing space between author and bracketed year in Reference " + str(i + 1) + ": " + ref_author_year_part[i])
-                    if not temp_item[1].startswith(" "):
-                        error_references.append("Missing space between author name and first name in Reference " + str(i + 1) + ": " + ref_author_year_part[i])
-                    if not temp_item[1].rstrip().endswith("."):
-                        error_references.append(
-                            "In Reference " + str(
-                            i + 1) + ", the first name should be a single capital letter followed by a period.")
-
-                if len(temp_item) == 3:
-                    error_references.append(
-                        "Missing comma in author name in Reference " + str(i + 1) + ": " +
-                        ref_author_year_part[i])
-
-                # If temp_item has on odd number of element, it means there's a comma missing. It has to be added in the right place
-                if len(temp_item) % 2 != 0 and len(temp_item) > 3:
-                    error_references.append("Missing comma in author name in Reference " + str(i + 1) + ": " + ref_author_year_part[i])
-                    for item in temp_item:
-                        if len(item.split()) == 2 and not item.split()[0][-1] == ".":
-                            last_name, first_name = item.split()
-                            first_name = " " + first_name
-                            temp_item = [last_name] + [first_name] + temp_item[1:]
-
-                if len(temp_item) >= 4:  # Two or more authorsThree-author reference
-                    if "&" not in ref_author_year_part[i]:
-                        error_references.append( "The last authors in a reference should be separated from the first two by a comma and an ampersand (&). See Reference " + str(i + 1) + ".")
-                    counter = 0
-                    for item in temp_item[1:]:  # the loop starts on the second items, as the first (ie author) will never start with a space
-                        counter += 1
-                        if not item.startswith(" "):
-                            error_references.append("Missing space in Reference " + str(i + 1) + ", at or after author " + str(int((counter+1)/2)) + ": " + ref_author_year_part[i])
-                    if temp_item[len(temp_item)-3].endswith(" "):
-                        error_references.append("Missing comma before the ampersand or 'and' in Reference " + str(i + 1) + ": " + ref_author_year_part[i])
-                    for j in range(1, len(temp_item), 2):
-                        if not re.search("[A-Z]\.", temp_item[j]):
-                            error_references.append("In Reference " + str(i + 1) + ", author " + str(int((j+1)/2)) + ", the first name should be a single capital letter followed by a period.")
 
             # CASE 2 in APA: Web reference, e.g. Ipperciel, D. (2023, October 31).
             elif re.search("\([1-2]\d{3}[a-z]?,\s?\w+ \d{1,2}\)", reference_list[i]):
                 index1 = reference_list[i].index(")")
-                ref_author_year_part.append(reference_list[i][:index1 + 1])
+                temp_reference_list = reference_list[i][:index1 + 1] # Need to remove the month/day from the bracket for standardized treatment in check_author_year
+                bracket_index = temp_reference_list.index("(")
+                comma_index = temp_reference_list.index(",", bracket_index + 1)
+                temp_reference_list = temp_reference_list[:comma_index] + ")"
+                ref_author_year_part.append(temp_reference_list)
 
-                # Possible errors
-                if reference_list[i][index1 + 1] != ".":
-                    error_references.append("Missing period after the year in Reference " + str(i + 1) + ": " + reference_list[i][:index1 + 1])
-                if " and " in ref_author_year_part[i]:  # Check if "and" instead of & is in the citation
-                    error_references.append(
-                        "Ampersand (&) should be used instead of 'and' in reference " + str(i + 1) + ": " +
-                        ref_author_year_part[i])
+                check_author_year(reference_list, ref_author_year_part, index1, i, error_references)
+
+                months = ["January", "February", "March", "April", "May", "June", "July", "August", "September",
+                          "October", "November", "December"]
+                if not any(month in reference_list[i][:index1 + 1] for month in months):
+                    error_references.append("In Reference " + str(i + 1) + ", the month has to be written in full")
 
             # CASE 3: No year (n.d.)
             elif "(n.d.)" in reference_list[i]:
-                index1 = reference_list[i].index("(n.d.)")
-                ref_author_year_part.append(reference_list[i][:index1 + 6])
+                index1 = reference_list[i].index(")")
+                ref_author_year_part.append(reference_list[i][:index1 + 1])
 
-                # Possible errors
-                if reference_list[i][index1 + 6] != ".":
-                    error_references.append(
-                        "Missing period after the year in Reference " + str(i + 1) + ": " + reference_list[i][
-                                                                                            :index1 + 6])
+                check_author_year(reference_list, ref_author_year_part, index1, i, error_references)
 
         else:  # If the reference is not in APA style, i.e. no year in brackets
             error_references.append("Reference " + str(i + 1) + " is not in APA format. References in APA always start with the author's name, first letter of the first name and the year in brackets.")
