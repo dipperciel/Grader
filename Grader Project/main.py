@@ -5,18 +5,22 @@
 # Import packages ----------------------------------------------------------------------------------- #
 from docx import Document  # install python-docx
 import re
-
+import mammoth  # to convert docx to html
 # import neuspell
 # from neuspell import available_checkers, BertChecker
 
 # INPUT variables------------------------------------------------------------------------------------ #
-
-doc = Document(
-    "C:/Users/donal/OneDrive - York University/New/Al/E-Grader/test_references.docx")  # Document to be graded
+file_source = "C:/Users/donal/OneDrive - York University/New/Al/E-Grader/test_references.docx"
+doc = Document(file_source)  # Document to be graded
 end_of_paragraph = r"\.\s*$"  # Regex pattern to find the end of a paragraph (a hard return)
 required_wordcount = 1000
 required_references = 5
 
+# Initial set-up
+
+with open(file_source, "rb") as docx_file:
+    result = mammoth.convert_to_html(docx_file)  # this converts my doc to html
+    html_text = result.value
 
 # Functions------------------------------------------------------------------------------------------ #
 
@@ -55,6 +59,20 @@ def create_three_sections(doc,
     full_text = full_text.replace("*Beginning*", "")
 
     return title_page, text_minus_title, references, body, full_text
+
+
+def create_html_references(html_text): # Creates a references section in html to check for italics
+    if html_text.find(">Bibliography<") != -1:
+        biblio_index = html_text.find(">Bibliography<")
+        html_references = "<p" + html_text[biblio_index:]
+
+    elif html_text.find(">References<") != -1:
+        biblio_index = html_text.find(">References<")
+        html_references = "<p" + html_text[biblio_index:]
+    else:
+        html_references = "null"
+
+    return html_references
 
 
 def wordcount(text):  # Returns the number of words in a string
@@ -210,7 +228,7 @@ def check_references(references, required_references):
         if not reference_list[i].endswith("."):
             error_references.append("Missing period at the end of reference " + str(i + 1) + ".")
 
-    # Check inside the references-----------------------------------------------------------------#
+    # Check the author-year part of the references -----------------------------------------------#
 
     # Grab the names and authors from each reference
     ref_author_year_part = []
@@ -254,11 +272,66 @@ def check_references(references, required_references):
                 i]).group() + ")"  # grabs the first author's name and a year anywhere in the reference
             ref_author_year_part.append(temp_ref)
 
-    #### Define regex patterns for APA ####
-    # APA_author = r"^\b([A-Z][a-z]*),\s([A-Z])\."  # e.g. Ipperciel, D.
-    # APA_author_next = r"\,\s([A-Z][a-z]*),\s([A-Z])\.\s"  # e.g. & ElAtia, S.
-    # APA_author_all = f"{APA_author}(?:{APA_author_next})*"  # e.g. Ipperciel, D. & ElAtia, S.
-    # APA_year = r"\([0-9]{4}[a-z]?\)\."
+    # Check the second part of the references -----------------------------------------------------#
+
+    html_references = create_html_references(html_text)  # This gives me the bibliography in html format
+    html_reference_list = html_references.split("</p>")  # The bibliography is split into individual references
+    html_reference_list = [item[3:-4] for item in html_reference_list if item != ''] # deletes empty items
+
+    # Isolates the text in italics
+    italicized = []
+    for individual_reference in html_reference_list:
+        if re.search("<em>.*?</em>", individual_reference):
+            temp_italics = re.search("<em>.*?</em>", individual_reference).group()[4:-5]  # Grabs the content between the <em> tags
+            temp_italics = re.sub(r",[\d\s()]*", "", temp_italics).strip()  # eliminates digits, spaces and parenthesis
+            temp_italics = re.sub(r"\.[\d\s()]*","", temp_italics).strip() # in case the journal title is erroneously followed by a period
+            italicized.append(temp_italics)
+        elif "Bibliography<" in individual_reference or "References<" in individual_reference:
+            pass
+        else:
+            italicized.append("")
+
+    #print(italicized)
+    #print(reference_list)
+
+    # Identify types of entries
+    for i in range(len(reference_list)):
+        if italicized[i] != "":
+            begin_index = reference_list[i].index(italicized[i])
+            end_index = begin_index + len(italicized[i])
+            before_italics = reference_list[i][:begin_index]
+            after_italics = reference_list[i][end_index:]
+
+            # Journal articles
+            if not re.search("\d\)", before_italics[-8:]) and re.search("[\d\s()–\-,]*", after_italics[:6]):
+                # reference_type = "journal article"
+                # possible errors
+                if before_italics[-1] != " ":
+                    error_references.append("Reference " + str(i + 1) + " is missing a space before the journal title.")
+                if before_italics[-2] != ".":
+                    if before_italics[-2] == "\"":
+                        error_references.append("In Reference " + str(i + 1) + ", the article title should not be in quotation marks, as per APA standards.")
+                    if before_italics[-2] != ".\"":
+                        pass
+                    else:
+                        error_references.append("Reference " + str(i + 1) + " should have a period after the article title.")
+
+                if after_italics[0] != ",":
+                    error_references.append("Reference " + str(i + 1) + " should have a comma after the journal title.")
+                if not re.search("\d{1,3}\(\d{1,2}\)", after_italics):
+                    error_references.append("In Reference " + str(i + 1) + ", the volume and issue information should conform to the following format: 43(3), with no space before the opening bracket.")
+                if "p." in after_italics:
+                    error_references.append("In Reference " + str(i + 1) + ", page number should not be preceded by 'p.' or 'pp.'. Page numbering should conform to the following format: '23-56'.")
+                if italicized[i].isupper():
+                    error_references.append("In Reference " + str(i + 1) + ", the journal title should not be all in uppercase.")
+
+            # website and newspapers
+
+        else:
+            error_references.append("In Reference " + str(i + 1) + ", the title is not in italics. Remember: either the journal title, book title or website title should always be in italics, even in the body.")
+
+
+
 
     # !!!! If there's an http (not doi), it should be only for web sites. Need to be able to identify a web page... so as to exclude http from other references !!!
 
@@ -401,3 +474,4 @@ else:
 final_report = generate_final_report(required_wordcount, num_words_text_minus_title, error_APA,
                                      error_references)  # !! pas oublier d'ajouter error_concordance!!!!
 print("Final report: ", final_report)
+
