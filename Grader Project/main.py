@@ -1,11 +1,14 @@
 # --------------------------------------------------------------------------------------------------- #
 # Grading module
 # --------------------------------------------------------------------------------------------------- #
+import json
 
 # Import packages ----------------------------------------------------------------------------------- #
 from docx import Document  # install python-docx
 import re
 import mammoth  # to convert docx to html
+import urllib.request
+import json
 # import neuspell
 # from neuspell import available_checkers, BertChecker
 
@@ -201,6 +204,96 @@ def check_author_year(reference_list, ref_author_year_part, index1, i, error_ref
     return error_references
 
 
+def check_doi(reference_list_i, error_references):
+
+    if "https://doi.org/" in reference_list_i:
+        # extract the doi link from the reference
+        doi_link = re.search("https:\/\/doi\.org\/10\.\d+\S*[^.]", reference_list_i).group()[16:]
+        crossref_url = "https://api.crossref.org/works/" + doi_link # this is the api.crossref.org url
+        # read the contents of the URL using the urllib.request library (see import section)
+        response = urllib.request.urlopen(crossref_url)
+        content = response.read().decode("utf-8")
+        # convert content to a true JSON file (it's already in a JSON format)
+        data = json.loads(content)
+
+        # Access specific elements
+        reference_type = data["message"]["type"]
+        # print("reference_type: " + reference_type)
+        if reference_type == "journal-article":
+            # print(" entered!!!!!")
+            article_title = data["message"]["title"][0]
+            journal_title = data["message"]["container-title"][0]
+            journal_volume = data["message"]["volume"]
+            journal_issue = data["message"]["journal-issue"]["issue"]
+            article_pages = data["message"]["container-title"][0]
+            # print("reference_type: ", reference_type)
+            # print("article_title: ", article_title)
+            # print("journal_title: ", journal_title)
+            # print("journal_volume: ", journal_volume)
+            # print("journal_issue: ", journal_issue)
+            # print("article_pages: ", article_pages)
+        else:
+            pass
+
+        # possible errors
+        # list them here
+
+    return error_references
+
+
+def add_doi(reference_list, error_references):  # Add doi to references that don't have one
+    authors = []
+    titles = []
+    for i in range(len(reference_list)):
+
+        # grab first author name in reference_list and put it in author[]
+        name_index = reference_list[i].index(",")
+        temp_author = reference_list[i][:name_index]
+        authors.append(temp_author)
+
+        # find the title of the article or book or whatever
+        bracket_index = reference_list[i].index(")") # !!!! Author can have first names in brackes !!!
+        period_index = reference_list[i].index(".", bracket_index + 2)
+        temp_title = reference_list[i][bracket_index+2:period_index].strip()
+        temp_title_mod = temp_title.replace(" ", "+")
+        titles.append(temp_title_mod)
+
+        # search crossref using author and title
+        crossref_url = "https://api.crossref.org/works?query.bibliographic=" + titles[i] + ".author=" + authors[i]
+        encoded_url = urllib.parse.quote(crossref_url, safe=':/?=&') # so it can handle non-ASCII characters
+        response = urllib.request.urlopen(encoded_url)
+        content = response.read().decode("utf-8")
+        data = json.loads(content)
+
+        # Grab DOI from crossref
+        doi = data["message"]["items"][0]["DOI"]
+        clean_doi = doi.replace(".supp", "")
+        doi = clean_doi
+
+        # Check if doi is valid
+        crossref_url = "https://api.crossref.org/works/" + doi  # this is the api.crossref.org url
+        # read the contents of the URL using the urllib.request library (see import section)
+        response = urllib.request.urlopen(crossref_url)
+        content = response.read().decode("utf-8")
+        # convert content to a true JSON file (it's already in a JSON format)
+        data = json.loads(content)
+
+        # Add the doi to the reference if the JSON data is in the reference list
+        if "https://doi.org/" not in reference_list[i]:
+            temp_reference_list = reference_list[i] + " https://doi.org/" + doi
+        else:
+            temp_reference_list = reference_list[i]
+        print("temp_reference_list: ", temp_reference_list)
+        # Compare specific elements
+        reference_type = data["message"]["type"]
+        print("reference_type: " + reference_type)
+        if (data["message"]["title"][0] in temp_reference_list and
+                data["message"]["author"][0]["family"] in temp_reference_list):
+            reference_list[i] = temp_reference_list
+
+    return reference_list
+
+
 def check_references(references, required_references):
     error_references = []
 
@@ -237,7 +330,7 @@ def check_references(references, required_references):
 
             # CASE 1 in APA: classic year in brackets, i.e. Ipperciel, D. (2023) or ElAtia, S. (2022a)
             if re.search("\([1-2]\d{3}[a-z]?\)", reference_list[i]):
-                index1 = reference_list[i].index(")")
+                index1 = reference_list[i].index(")") # !!!! Author can have first names in brackes !!!
                 ref_author_year_part.append(reference_list[i][:index1 + 1])
 
                 check_author_year(reference_list, ref_author_year_part, index1, i, error_references)
@@ -245,7 +338,7 @@ def check_references(references, required_references):
 
             # CASE 2 in APA: Web reference, e.g. Ipperciel, D. (2023, October 31).
             elif re.search("\([1-2]\d{3}[a-z]?,\s?\w+ \d{1,2}\)", reference_list[i]):
-                index1 = reference_list[i].index(")")
+                index1 = reference_list[i].index(")") # !!!! Author can have first names in brackes !!!
                 temp_reference_list = reference_list[i][:index1 + 1] # Need to remove the month/day from the bracket for standardized treatment in check_author_year
                 bracket_index = temp_reference_list.index("(")
                 comma_index = temp_reference_list.index(",", bracket_index + 1)
@@ -261,7 +354,7 @@ def check_references(references, required_references):
 
             # CASE 3: No year (n.d.)
             elif "(n.d.)" in reference_list[i]:
-                index1 = reference_list[i].index(")")
+                index1 = reference_list[i].index(")") # !!!! Author can have first names in brackes !!!
                 ref_author_year_part.append(reference_list[i][:index1 + 1])
 
                 check_author_year(reference_list, ref_author_year_part, index1, i, error_references)
@@ -294,7 +387,10 @@ def check_references(references, required_references):
     #print(italicized)
     #print(reference_list)
 
-    # Identify types of entries
+    # Add doi to references that don't have one
+    reference_list = add_doi(reference_list, error_references)
+    print("modified reference list: ", reference_list)
+
     for i in range(len(reference_list)):
         if italicized[i] != "":
             begin_index = reference_list[i].index(italicized[i])
@@ -302,9 +398,13 @@ def check_references(references, required_references):
             before_italics = reference_list[i][:begin_index]
             after_italics = reference_list[i][end_index:]
 
+            # Identify types of references ########
+            error_references = check_doi(reference_list[i], error_references)
+
             # Journal articles
-            if not re.search("\d\)", before_italics[-8:]) and re.search("[\d\s()–\-,]*", after_italics[:6]):
+            if not re.search("\d\)", before_italics[-8:]) and re.search("[\d\s()–\-,]*", after_italics[:6]): # identifies the journal article
                 # reference_type = "journal article"
+
                 # possible errors
                 if before_italics[-1] != " ":
                     error_references.append("Reference " + str(i + 1) + " is missing a space before the journal title.")
@@ -326,11 +426,15 @@ def check_references(references, required_references):
                     error_references.append("In Reference " + str(i + 1) + ", the journal title should not be all in uppercase.")
 
             # website and newspapers
+            if "https://" in reference_list[i] and "https://doi" not in reference_list[i]\
+                    and reference_list[i].index("https://") > reference_list[i].index(italicized[i]): # and italicized is just before the http
+                # reference_type = "website or newspaper"
+                # print(reference_list[i])
+                pass
+
 
         else:
             error_references.append("In Reference " + str(i + 1) + ", the title is not in italics. Remember: either the journal title, book title or website title should always be in italics, even in the body.")
-
-
 
 
     # !!!! If there's an http (not doi), it should be only for web sites. Need to be able to identify a web page... so as to exclude http from other references !!!
@@ -473,5 +577,5 @@ else:
 
 final_report = generate_final_report(required_wordcount, num_words_text_minus_title, error_APA,
                                      error_references)  # !! pas oublier d'ajouter error_concordance!!!!
-print("Final report: ", final_report)
+# print("Final report: ", final_report)
 
