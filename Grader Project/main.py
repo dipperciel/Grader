@@ -120,21 +120,17 @@ def check_intext_citations(body):
     return error_APA, citation_list
 
 
-def check_author_year(reference_list, ref_author_year_part, index1, i, error_references):
+def check_author_year(temp_reference, i, error_references):
 
     # Possible errors
-    if reference_list[i][index1 + 1] != ".":
-        error_references.append(
-            "Missing period after the bracketed year in Reference " + str(i + 1) + ": " + reference_list[i][
-                                                                                          :index1 + 1])
-    if " and " in ref_author_year_part[i]:  # Check if "and" instead of & is in the citation
+    if " and " in temp_reference:  # Check if "and" instead of & is in the citation
         error_references.append(
             "Ampersand (&) should be used instead of 'and' in reference " + str(i + 1) + ": " +
-            ref_author_year_part[i])
+            temp_reference)
 
     # Preparing the author section for analysis below
-    temp_item = ref_author_year_part[i].replace("&", ",").replace("and", ",").split(",")
-    temp_item[-1] = temp_item[-1][:-6]
+    temp_item = temp_reference.replace("&", ",").replace("and", ",").split(",")
+    temp_item[-1] = temp_item[-1][:-6] # to get rid of the bracketed year
     temp_item = [x for x in temp_item if
                  x != "" and x != " "]  # Removes the items with the values "" and " " from the list
 
@@ -142,11 +138,11 @@ def check_author_year(reference_list, ref_author_year_part, index1, i, error_ref
     if len(temp_item) == 1:  # if there's no comma in the single-author reference
         error_references.append(
             "Missing comma between author name and first name in Reference " + str(i + 1) + ": " +
-            ref_author_year_part[i])
+            temp_reference)
         if temp_item[0][-1] != " ":
             error_references.append(
                 "Missing space between author and bracketed year in Reference " + str(i + 1) + ": " +
-                ref_author_year_part[i])
+                temp_reference)
         if temp_item[0].rstrip()[-1] != ".":
             error_references.append(
                 "In Reference " + str(
@@ -156,11 +152,11 @@ def check_author_year(reference_list, ref_author_year_part, index1, i, error_ref
         if not temp_item[1].endswith(" "):
             error_references.append(
                 "Missing space between author and bracketed year in Reference " + str(i + 1) + ": " +
-                ref_author_year_part[i])
+                temp_reference)
         if not temp_item[1].startswith(" "):
             error_references.append(
                 "Missing space between author name and first name in Reference " + str(i + 1) + ": " +
-                ref_author_year_part[i])
+                temp_reference)
         if not temp_item[1].rstrip().endswith("."):
             error_references.append(
                 "In Reference " + str(
@@ -169,12 +165,12 @@ def check_author_year(reference_list, ref_author_year_part, index1, i, error_ref
     if len(temp_item) == 3:
         error_references.append(
             "Missing comma in author name in Reference " + str(i + 1) + ": " +
-            ref_author_year_part[i])
+            temp_reference)
 
     # If temp_item has on odd number of element, it means there's a comma missing. It has to be added in the right place
     if len(temp_item) % 2 != 0 and len(temp_item) > 3:
         error_references.append(
-            "Missing comma in author name in Reference " + str(i + 1) + ": " + ref_author_year_part[i])
+            "Missing comma in author name in Reference " + str(i + 1) + ": " + temp_reference)
         for item in temp_item:
             if len(item.split()) == 2 and not item.split()[0][-1] == ".":
                 last_name, first_name = item.split()
@@ -182,7 +178,7 @@ def check_author_year(reference_list, ref_author_year_part, index1, i, error_ref
                 temp_item = [last_name] + [first_name] + temp_item[1:]
 
     if len(temp_item) >= 4:  # Two or more authorsThree-author reference
-        if "&" not in ref_author_year_part[i]:
+        if "&" not in temp_reference:
             error_references.append(
                 "In Reference " + str(i + 1)+ ", the last author should be separated from the rest by a comma and an ampersand (&).")
         counter = 0
@@ -191,11 +187,10 @@ def check_author_year(reference_list, ref_author_year_part, index1, i, error_ref
             counter += 1
             if not item.startswith(" "):
                 error_references.append("Missing space in Reference " + str(i + 1) + ", at or after author " + str(
-                    int((counter + 1) / 2)) + ": " + ref_author_year_part[i])
+                    int((counter + 1) / 2)) + ": " + temp_reference)
         if temp_item[len(temp_item) - 3].endswith(" "):
             error_references.append(
-                "Missing comma before the ampersand or 'and' in Reference " + str(i + 1) + ": " + ref_author_year_part[
-                    i])
+                "Missing comma before the ampersand or 'and' in Reference " + str(i + 1) + ": " + temp_reference)
         for j in range(1, len(temp_item), 2):
             if not re.search("[A-Z]\.", temp_item[j]):
                 error_references.append("In Reference " + str(i + 1) + ", author " + str(
@@ -205,35 +200,45 @@ def check_author_year(reference_list, ref_author_year_part, index1, i, error_ref
 
 
 def check_doi(reference_list_i, error_references):
+    print("reference_list_i: ", reference_list_i)
+    # extract the doi link from the reference
+    doi_link = re.search("https:\/\/doi\.org\/10\.\d+\S*[^.]", reference_list_i).group()[16:]
+    crossref_url = "https://api.crossref.org/works/" + doi_link # this is the api.crossref.org url
 
-    if "https://doi.org/" in reference_list_i:
-        # extract the doi link from the reference
-        doi_link = re.search("https:\/\/doi\.org\/10\.\d+\S*[^.]", reference_list_i).group()[16:]
-        crossref_url = "https://api.crossref.org/works/" + doi_link # this is the api.crossref.org url
-        # read the contents of the URL using the urllib.request library (see import section)
-        response = urllib.request.urlopen(crossref_url)
-        content = response.read().decode("utf-8")
-        # convert content to a true JSON file (it's already in a JSON format)
-        data = json.loads(content)
+    # read the contents of the URL using the urllib.request library (see import section)
+    response = urllib.request.urlopen(crossref_url)
+    content = response.read().decode("utf-8")
 
-        # Access specific elements
-        reference_type = data["message"]["type"]
-        # print("reference_type: " + reference_type)
-        if reference_type == "journal-article":
-            # print(" entered!!!!!")
-            article_title = data["message"]["title"][0]
-            journal_title = data["message"]["container-title"][0]
-            journal_volume = data["message"]["volume"]
-            journal_issue = data["message"]["journal-issue"]["issue"]
-            article_pages = data["message"]["container-title"][0]
-            # print("reference_type: ", reference_type)
-            # print("article_title: ", article_title)
-            # print("journal_title: ", journal_title)
-            # print("journal_volume: ", journal_volume)
-            # print("journal_issue: ", journal_issue)
-            # print("article_pages: ", article_pages)
-        else:
-            pass
+    # convert content to a true JSON file (it's already in a JSON format)
+    data = json.loads(content)
+
+    # Access specific elements
+    reference_type = data["message"]["type"]
+    print("reference_type: " + reference_type)
+    if reference_type == "journal-article":
+        article_title = data["message"]["title"][0]
+        journal_title = data["message"]["container-title"][0]
+        journal_volume = data["message"]["volume"]
+        journal_issue = data["message"]["journal-issue"]["issue"]
+        article_pages = data["message"]["page"]
+        # print("reference_type: ", reference_type)
+        # print("article_title: ", article_title)
+        # print("journal_title: ", journal_title)
+        # print("journal_volume: ", journal_volume)
+        # print("journal_issue: ", journal_issue)
+        # print("article_pages: ", article_pages)
+    elif reference_type == "book":
+        book_title = data["message"]["title"][0]
+        book_publisher = data["message"]["publisher"]
+        # print("book_title: ", book_title)
+    elif reference_type == "book-chapter":
+        chapter_title = data["message"]["title"][0]
+        chapter_book_title = data["message"]["container-title"][0]
+        chapter_pages = data["message"]["page"]
+        chapter_publisher = data["message"]["publisher"]
+    elif reference_type == "edited-book":
+        ed_book_title = data["message"]["title"][0]
+        ed_book_publisher = data["message"]["publisher"]
 
         # possible errors
         # list them here
@@ -252,7 +257,12 @@ def add_doi(reference_list, error_references):  # Add doi to references that don
         authors.append(temp_author)
 
         # find the title of the article or book or whatever
-        bracket_index = reference_list[i].index(")") # !!!! Author can have first names in brackes !!!
+        if re.search("\([1-2]\d{3}[a-z]?", reference_list[i]):
+            bracketed_date = re.search("\([1-2]\d{3}[a-z]?", reference_list[i]).group()
+        elif "(n.d.)" in reference_list[i]:
+            bracketed_date = "(n.d.)"
+        bracket_index_temp = reference_list[i].index(bracketed_date)
+        bracket_index = reference_list[i].index(")", bracket_index_temp)
         period_index = reference_list[i].index(".", bracket_index + 2)
         temp_title = reference_list[i][bracket_index+2:period_index].strip()
         temp_title_mod = temp_title.replace(" ", "+")
@@ -283,10 +293,9 @@ def add_doi(reference_list, error_references):  # Add doi to references that don
             temp_reference_list = reference_list[i] + " https://doi.org/" + doi
         else:
             temp_reference_list = reference_list[i]
-        print("temp_reference_list: ", temp_reference_list)
+
         # Compare specific elements
         reference_type = data["message"]["type"]
-        print("reference_type: " + reference_type)
         if (data["message"]["title"][0] in temp_reference_list and
                 data["message"]["author"][0]["family"] in temp_reference_list):
             reference_list[i] = temp_reference_list
@@ -310,15 +319,9 @@ def check_references(references, required_references):
     if reference_list != sorted(reference_list):
         error_references.append("References in the bibliography are not in alphabetical order.")
 
-    # Check if the references has a doi
-    for i in range(len(reference_list)):
-        if "https://doi" in reference_list[i]:
-            error_references.append("Reference " + str(
-                i + 1) + " has a doi number. While this is optional in APA, it should not be included in papers in this class.")
-
     # Check for missing period at the end of the reference
     for i in range(len(reference_list)):
-        if not reference_list[i].endswith("."):
+        if not reference_list[i].endswith(".") and "https://doi.org/" not in reference_list[i]:
             error_references.append("Missing period at the end of reference " + str(i + 1) + ".")
 
     # Check the author-year part of the references -----------------------------------------------#
@@ -330,34 +333,37 @@ def check_references(references, required_references):
 
             # CASE 1 in APA: classic year in brackets, i.e. Ipperciel, D. (2023) or ElAtia, S. (2022a)
             if re.search("\([1-2]\d{3}[a-z]?\)", reference_list[i]):
-                index1 = reference_list[i].index(")") # !!!! Author can have first names in brackes !!!
-                ref_author_year_part.append(reference_list[i][:index1 + 1])
-
-                check_author_year(reference_list, ref_author_year_part, index1, i, error_references)
-
+                bracketed_date = re.search("\([1-2]\d{3}[a-z]?\)", reference_list[i]).group()
+                index1 = reference_list[i].index(bracketed_date)
+                temp_reference = reference_list[i][:index1].strip() + " " + bracketed_date
+                ref_author_year_part.append(temp_reference)
+                check_author_year(temp_reference, i, error_references)
+                if reference_list[i][index1 + len(bracketed_date)] != ".":
+                    error_references.append("Missing period after the bracketed year in Reference " + str(i + 1) + ": " + reference_list[i][:index1 + 1])
 
             # CASE 2 in APA: Web reference, e.g. Ipperciel, D. (2023, October 31).
             elif re.search("\([1-2]\d{3}[a-z]?,\s?\w+ \d{1,2}\)", reference_list[i]):
-                index1 = reference_list[i].index(")") # !!!! Author can have first names in brackes !!!
-                temp_reference_list = reference_list[i][:index1 + 1] # Need to remove the month/day from the bracket for standardized treatment in check_author_year
-                bracket_index = temp_reference_list.index("(")
-                comma_index = temp_reference_list.index(",", bracket_index + 1)
-                temp_reference_list = temp_reference_list[:comma_index] + ")"
-                ref_author_year_part.append(temp_reference_list)
-
-                check_author_year(reference_list, ref_author_year_part, index1, i, error_references)
+                bracketed_date = re.search("\([1-2]\d{3}[a-z]?,\s?\w+ \d{1,2}\)", reference_list[i]).group()
+                bracket_index = reference_list[i].index(bracketed_date)
+                comma_index = reference_list[i].index(",", bracket_index + 1)
+                temp_reference = reference_list[i][:comma_index] + ")"
+                ref_author_year_part.append(temp_reference)
+                check_author_year(temp_reference, i, error_references)
+                if reference_list[i][bracket_index + len(bracketed_date)] != ".":
+                    error_references.append(
+                        "Missing period after the bracketed year in Reference " + str(i + 1) + ": " + reference_list[i][:index1 + 1])
 
                 months = ["January", "February", "March", "April", "May", "June", "July", "August", "September",
                           "October", "November", "December"]
-                if not any(month in reference_list[i][:index1 + 1] for month in months):
+                if not any(month in reference_list[i][:bracket_index + 1] for month in months):
                     error_references.append("In Reference " + str(i + 1) + ", the month has to be written in full")
 
             # CASE 3: No year (n.d.)
             elif "(n.d.)" in reference_list[i]:
-                index1 = reference_list[i].index(")") # !!!! Author can have first names in brackes !!!
-                ref_author_year_part.append(reference_list[i][:index1 + 1])
-
-                check_author_year(reference_list, ref_author_year_part, index1, i, error_references)
+                index1 = reference_list[i].index("(n.d.)")
+                temp_reference = reference_list[i][:index1 + 6]
+                ref_author_year_part.append(temp_reference)
+                check_author_year(temp_reference, i, error_references)
 
         else:  # If the reference is not in APA style, i.e. no year in brackets
             error_references.append("Reference " + str(i + 1) + " is not in APA format. References in APA always start with the author's name, first letter of the first name and the year in brackets.")
@@ -367,6 +373,10 @@ def check_references(references, required_references):
 
     # Check the second part of the references -----------------------------------------------------#
 
+    # Add doi to references that don't have one (will be checked below in the for loop)
+    reference_list = add_doi(reference_list, error_references)
+
+    # Get references in html to preserve the italics
     html_references = create_html_references(html_text)  # This gives me the bibliography in html format
     html_reference_list = html_references.split("</p>")  # The bibliography is split into individual references
     html_reference_list = [item[3:-4] for item in html_reference_list if item != ''] # deletes empty items
@@ -384,14 +394,14 @@ def check_references(references, required_references):
         else:
             italicized.append("")
 
-    #print(italicized)
-    #print(reference_list)
-
-    # Add doi to references that don't have one
-    reference_list = add_doi(reference_list, error_references)
-    print("modified reference list: ", reference_list)
-
+    # Checking the second part of the references
     for i in range(len(reference_list)):
+        print("i: ", i)
+        # Start by looking for errors in references with doi numbers
+        if "https://doi.org/" in reference_list[i]:
+            check_doi(reference_list[i], error_references)
+
+        # Beginning of actual manual check based in part in italics
         if italicized[i] != "":
             begin_index = reference_list[i].index(italicized[i])
             end_index = begin_index + len(italicized[i])
@@ -399,7 +409,6 @@ def check_references(references, required_references):
             after_italics = reference_list[i][end_index:]
 
             # Identify types of references ########
-            error_references = check_doi(reference_list[i], error_references)
 
             # Journal articles
             if not re.search("\d\)", before_italics[-8:]) and re.search("[\d\s()–\-,]*", after_italics[:6]): # identifies the journal article
@@ -455,7 +464,7 @@ def concordance_btw_citations_and_references(references,
     ref_author_year_part = []
     for i in range(len(reference_list)):
         try:
-            index1 = reference_list[i].index(")")
+            index1 = reference_list[i].index(")") # does this work???!!!
             if not re.search("\([1,2]\d{3}[a-z]?\)", reference_list[i][
                                                      :index1 + 1]):  # in case the reference is not in APA format, a bracket may appear further downthe reference...
                 temp_ref = reference_list[i].split()[0] + " (" + re.search("[1,2]\d{3}", reference_list[
@@ -577,5 +586,5 @@ else:
 
 final_report = generate_final_report(required_wordcount, num_words_text_minus_title, error_APA,
                                      error_references)  # !! pas oublier d'ajouter error_concordance!!!!
-# print("Final report: ", final_report)
+#print("Final report: ", final_report)
 
