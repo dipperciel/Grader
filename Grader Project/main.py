@@ -199,8 +199,7 @@ def check_author_year(temp_reference, i, error_references):
     return error_references
 
 
-def check_doi(reference_list_i, error_references):
-    print("reference_list_i: ", reference_list_i)
+def check_doi(reference_list_i, italicized, i, error_references):
     # extract the doi link from the reference
     doi_link = re.search("https:\/\/doi\.org\/10\.\d+\S*[^.]", reference_list_i).group()[16:]
     crossref_url = "https://api.crossref.org/works/" + doi_link # this is the api.crossref.org url
@@ -214,19 +213,49 @@ def check_doi(reference_list_i, error_references):
 
     # Access specific elements
     reference_type = data["message"]["type"]
-    print("reference_type: " + reference_type)
+
     if reference_type == "journal-article":
-        article_title = data["message"]["title"][0]
+        article_title = data["message"]["title"][0].replace("<i>", "").replace("</i>", "")  # Sometimes, the article title has italics... gotta get rid of the tags
+        if article_title[-1] == ".":
+            article_title = article_title[:-1]
         journal_title = data["message"]["container-title"][0]
         journal_volume = data["message"]["volume"]
         journal_issue = data["message"]["journal-issue"]["issue"]
         article_pages = data["message"]["page"]
-        # print("reference_type: ", reference_type)
-        # print("article_title: ", article_title)
-        # print("journal_title: ", journal_title)
-        # print("journal_volume: ", journal_volume)
-        # print("journal_issue: ", journal_issue)
-        # print("article_pages: ", article_pages)
+
+        reference_list_i = reference_list_i.replace("–", "-") # make hyphens consistent - less complicated in searches
+
+        # possible errors
+        if journal_title != italicized[i]:
+            error_references.append("In Reference " + str(i + 1) + ", the journal title (" + journal_title +  ") is not in italics.")
+        if article_title == italicized[i]:
+            error_references.append("In Reference " + str(i + 1) + ", the article title (" + article_title + ") should not be in italics.")
+        if journal_volume + "(" + journal_issue + ")" not in reference_list_i:
+            error_references.append("In Reference " + str(i + 1) + ", the volume and issue should be in the formal 43(3).")
+        if article_pages not in reference_list_i:
+            error_references.append("Missing or wrong page numbers (i.e., " + article_pages+ ") in Reference " + str(i + 1) + ".")
+        title_index = reference_list_i.index(article_title)
+        if reference_list_i[title_index-1] != " ":
+            error_references.append("Missing space before the article title in Reference " + str(i + 1) + ".")
+        if reference_list_i[title_index + len(article_title)] != ".":
+            error_references.append("There should be a period after the article title in Reference " + str(i + 1) + ".")
+        journal_index = reference_list_i.index(journal_title)
+        if reference_list_i[journal_index - 1] != " ":
+            error_references.append("Missing space before the journal title in Reference " + str(i + 1) + ".")
+        if reference_list_i[journal_index + len(journal_title)] != ",":
+            error_references.append("There should be a comma after the journal title in Reference " + str())
+        issue_index = reference_list_i.index(journal_issue + ")")
+        if reference_list_i[issue_index + 2] != "," and "htt" not in reference_list_i[issue_index+3:issue_index+8]:
+            error_references.append("The volume and issue should be followed by a comma in Reference " + str(i + 1) + ".")
+        doi_index = reference_list_i.index("https://doi.org/" + doi_link)
+        if reference_list_i[doi_index - 1] == ".":
+            error_references.append("Missing space before the doi in Reference " + str(i + 1) + ".")
+        elif reference_list_i[doi_index - 2] != ".":
+            error_references.append("Missing period at the end of Reference " + str(i + 1) + " (before the doi if it is included.")
+        if re.search("p\.\s?\d", reference_list_i):
+            error_references.append(
+                "Page numbers should not be preceded by 'p.' or 'pp.' in Reference " + str(i + 1) + ".")
+
     elif reference_type == "book":
         book_title = data["message"]["title"][0]
         book_publisher = data["message"]["publisher"]
@@ -380,14 +409,13 @@ def check_references(references, required_references):
     html_references = create_html_references(html_text)  # This gives me the bibliography in html format
     html_reference_list = html_references.split("</p>")  # The bibliography is split into individual references
     html_reference_list = [item[3:-4] for item in html_reference_list if item != ''] # deletes empty items
-
     # Isolates the text in italics
     italicized = []
     for individual_reference in html_reference_list:
         if re.search("<em>.*?</em>", individual_reference):
-            temp_italics = re.search("<em>.*?</em>", individual_reference).group()[4:-5]  # Grabs the content between the <em> tags
-            temp_italics = re.sub(r",[\d\s()]*", "", temp_italics).strip()  # eliminates digits, spaces and parenthesis
-            temp_italics = re.sub(r"\.[\d\s()]*","", temp_italics).strip() # in case the journal title is erroneously followed by a period
+            temp_italics = re.search("<em>.*?</em>", individual_reference).group()[4:-5].strip()  # Grabs the content between the <em> tags
+            while re.search("[,.0-9\(\)]$", temp_italics):
+                temp_italics = re.sub(r"[,.0-9\(\)]$", "", temp_italics).strip()
             italicized.append(temp_italics)
         elif "Bibliography<" in individual_reference or "References<" in individual_reference:
             pass
@@ -396,13 +424,12 @@ def check_references(references, required_references):
 
     # Checking the second part of the references
     for i in range(len(reference_list)):
-        print("i: ", i)
         # Start by looking for errors in references with doi numbers
         if "https://doi.org/" in reference_list[i]:
-            check_doi(reference_list[i], error_references)
+            check_doi(reference_list[i], italicized, i, error_references)
 
         # Beginning of actual manual check based in part in italics
-        if italicized[i] != "":
+        elif italicized[i] != "":
             begin_index = reference_list[i].index(italicized[i])
             end_index = begin_index + len(italicized[i])
             before_italics = reference_list[i][:begin_index]
@@ -441,9 +468,9 @@ def check_references(references, required_references):
                 # print(reference_list[i])
                 pass
 
-
         else:
-            error_references.append("In Reference " + str(i + 1) + ", the title is not in italics. Remember: either the journal title, book title or website title should always be in italics, even in the body.")
+            pass
+            # error_references.append("In Reference " + str(i + 1) + ", the title is not in italics. Remember: either the journal title, book title or website title should always be in italics, even in the body.")
 
 
     # !!!! If there's an http (not doi), it should be only for web sites. Need to be able to identify a web page... so as to exclude http from other references !!!
@@ -586,5 +613,5 @@ else:
 
 final_report = generate_final_report(required_wordcount, num_words_text_minus_title, error_APA,
                                      error_references)  # !! pas oublier d'ajouter error_concordance!!!!
-#print("Final report: ", final_report)
+print("Final report: ", final_report)
 
